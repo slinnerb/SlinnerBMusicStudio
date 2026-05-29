@@ -42,6 +42,7 @@ partial class MainForm
     private Button refreshButton;
     private Label levelLabel;
     private ProgressBar levelBar;
+    private Button updateButton;
 
     private Panel editPanel;
     private Button undoButton;
@@ -90,6 +91,7 @@ partial class MainForm
         this.refreshButton = new Button();
         this.levelLabel = new Label();
         this.levelBar = new ProgressBar();
+        this.updateButton = new Button();
         this.editPanel = new Panel();
         this.undoButton = new Button();
         this.redoButton = new Button();
@@ -281,6 +283,13 @@ partial class MainForm
         this.levelBar.Size = new Size(250, 20);
         this.levelBar.Maximum = 100;
 
+        this.updateButton.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+        this.updateButton.Location = new Point(908, 22);
+        this.updateButton.Size = new Size(160, 26);
+        this.updateButton.Text = "Check for Updates";
+        this.updateButton.UseVisualStyleBackColor = true;
+        this.updateButton.Click += this.CheckForUpdates_Click;
+
         this.devicePanel.Controls.Add(this.micLabel);
         this.devicePanel.Controls.Add(this.micCombo);
         this.devicePanel.Controls.Add(this.speakerLabel);
@@ -288,6 +297,7 @@ partial class MainForm
         this.devicePanel.Controls.Add(this.refreshButton);
         this.devicePanel.Controls.Add(this.levelLabel);
         this.devicePanel.Controls.Add(this.levelBar);
+        this.devicePanel.Controls.Add(this.updateButton);
 
         // --- edit panel -----------------------------------------------------
         this.editPanel.Dock = DockStyle.Top;
