@@ -160,6 +160,19 @@ partial class MainForm
             miAddTrack, miImportTrack, new ToolStripSeparator(), this.miRemoveTrack
         });
 
+        var friendsMenu = new ToolStripMenuItem("&Work with Friends");
+        var miCreateSession = new ToolStripMenuItem("&Create New Song (host session)…", null, this.CreateSession_Click);
+        var miJoinSession = new ToolStripMenuItem("&Join Music Session…", null, this.JoinSession_Click);
+        var miSync = new ToolStripMenuItem("&Sync Now", null, this.SyncSession_Click) { ShortcutKeys = Keys.F5 };
+        var miLeaveSession = new ToolStripMenuItem("&Leave Session", null, this.LeaveSession_Click);
+        var miFriendsSettings = new ToolStripMenuItem("Session Se&ttings…", null, this.SessionSettings_Click);
+        friendsMenu.DropDownItems.AddRange(new ToolStripItem[]
+        {
+            miCreateSession, miJoinSession, new ToolStripSeparator(),
+            miSync, miLeaveSession, new ToolStripSeparator(),
+            miFriendsSettings
+        });
+
         var helpMenu = new ToolStripMenuItem("&Help");
         var miShortcuts = new ToolStripMenuItem("&Keyboard Shortcuts", null, this.Shortcuts_Click) { ShortcutKeys = Keys.F1 };
         var miCheckForUpdates = new ToolStripMenuItem("Check for &Updates…", null, this.CheckForUpdates_Click);
@@ -168,7 +181,7 @@ partial class MainForm
 
         this.menuStrip.Items.AddRange(new ToolStripItem[]
         {
-            fileMenu, editMenu, effectsMenu, trackMenu, helpMenu
+            fileMenu, editMenu, effectsMenu, trackMenu, friendsMenu, helpMenu
         });
 
         // --- transport panel ------------------------------------------------

@@ -17,6 +17,10 @@ public class Settings
     public int? WindowWidth { get; set; }
     public int? WindowHeight { get; set; }
 
+    // Collaboration ("Work with Friends")
+    public string? ServerUrl { get; set; }
+    public string? PeerName { get; set; }
+
     private static string SettingsPath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
         "SlinnerBMusicStudio",

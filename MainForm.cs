@@ -1114,7 +1114,8 @@ public partial class MainForm : Form
             AppState.Playing => "  [Playing]",
             _ => ""
         };
-        Text = $"{mark}{name} — SlinnerB's Music Studio{suffix}";
+        string session = InSession ? $"  [Session {_sessionCode} · v{_sessionVersion}]" : "";
+        Text = $"{mark}{name} — SlinnerB's Music Studio{session}{suffix}";
     }
 
     private static string Fmt(double seconds)

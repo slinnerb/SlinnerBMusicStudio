@@ -1,3 +1,5 @@
+using System.Runtime.InteropServices;
+
 namespace SlinnerBMusicStudio;
 
 /// <summary>
@@ -96,6 +98,81 @@ public class Project
     {
         if (!Valid(index)) return;
         _tracks[index].Muted = muted;
+        Raise();
+    }
+
+    // --- project file format ----------------------------------------------
+    // Binary .smsproj layout:
+    //   4 bytes "SBMS"
+    //   int32 format version (currently 1)
+    //   int32 sample rate
+    //   int32 track count
+    //   per track:
+    //     int16 name byte length, name bytes (UTF-8)
+    //     byte  muted (0/1)
+    //     int32 sample count, sample count * float32 samples
+
+    private const uint Magic = 0x534D4253; // "SBMS"
+    private const int CurrentFormat = 1;
+
+    public byte[] ToBytes()
+    {
+        using var ms = new MemoryStream();
+        using (var w = new BinaryWriter(ms))
+        {
+            w.Write(Magic);
+            w.Write(CurrentFormat);
+            w.Write(Rate);
+            w.Write(_tracks.Count);
+            foreach (var t in _tracks)
+            {
+                var nameBytes = System.Text.Encoding.UTF8.GetBytes(t.Name ?? "");
+                if (nameBytes.Length > short.MaxValue)
+                    nameBytes = nameBytes[..short.MaxValue];
+                w.Write((short)nameBytes.Length);
+                w.Write(nameBytes);
+                w.Write((byte)(t.Muted ? 1 : 0));
+                w.Write(t.Samples.Length);
+                var bytes = MemoryMarshal.AsBytes(t.Samples.AsSpan());
+                w.Write(bytes);
+            }
+        }
+        return ms.ToArray();
+    }
+
+    public void LoadFromBytes(byte[] data)
+    {
+        using var ms = new MemoryStream(data, writable: false);
+        using var r = new BinaryReader(ms);
+        if (r.ReadUInt32() != Magic)
+            throw new InvalidDataException("Not a SlinnerB's Music Studio project file.");
+        int format = r.ReadInt32();
+        if (format != CurrentFormat)
+            throw new InvalidDataException($"Unsupported project format version {format}.");
+        int rate = r.ReadInt32();
+        if (rate != Rate)
+            throw new InvalidDataException($"Sample rate mismatch: file is {rate}, app expects {Rate}.");
+        int trackCount = r.ReadInt32();
+
+        var fresh = new List<AudioTrack>();
+        for (int i = 0; i < trackCount; i++)
+        {
+            int nameLen = r.ReadInt16();
+            string name = System.Text.Encoding.UTF8.GetString(r.ReadBytes(nameLen));
+            bool muted = r.ReadByte() != 0;
+            int sampleCount = r.ReadInt32();
+            var samples = new float[sampleCount];
+            var bytes = MemoryMarshal.AsBytes(samples.AsSpan());
+            int read = r.Read(bytes);
+            if (read != bytes.Length)
+                throw new InvalidDataException("Project file is truncated.");
+            fresh.Add(new AudioTrack { Name = name, Muted = muted, Samples = samples });
+        }
+
+        _tracks.Clear();
+        _tracks.AddRange(fresh);
+        _undo.Clear();
+        _redo.Clear();
         Raise();
     }
 
