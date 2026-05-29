@@ -604,6 +604,81 @@ public partial class MainForm : Form
         _dirty = true;
     }
 
+    private void LoudnessNormalize_Click(object? sender, EventArgs e)
+    {
+        if (_state != AppState.Idle || !ActiveHasAudio) return;
+
+        using var dlg = new Form
+        {
+            Text = "Make Louder",
+            FormBorderStyle = FormBorderStyle.FixedDialog,
+            StartPosition = FormStartPosition.CenterParent,
+            ClientSize = new Size(360, 168),
+            MaximizeBox = false,
+            MinimizeBox = false,
+            ShowInTaskbar = false
+        };
+        var info = new Label
+        {
+            Text = "Target loudness (RMS dB).  Higher = louder.",
+            Location = new Point(16, 12),
+            AutoSize = true
+        };
+        var preset = new ComboBox
+        {
+            Location = new Point(16, 36),
+            Width = 200,
+            DropDownStyle = ComboBoxStyle.DropDownList
+        };
+        preset.Items.AddRange(new object[]
+        {
+            "Subtle  (-20 dB)",
+            "Normal  (-16 dB)",
+            "Loud  (-14 dB)",
+            "Very loud  (-12 dB)",
+            "Maximum  (-9 dB)"
+        });
+        preset.SelectedIndex = 2;
+
+        var customLabel = new Label
+        {
+            Text = "Custom target:",
+            Location = new Point(16, 72),
+            AutoSize = true
+        };
+        var input = new NumericUpDown
+        {
+            Location = new Point(120, 70),
+            Width = 96,
+            Minimum = -36,
+            Maximum = -3,
+            DecimalPlaces = 1,
+            Increment = 0.5M,
+            Value = -14
+        };
+        preset.SelectedIndexChanged += (_, _) =>
+        {
+            decimal v = preset.SelectedIndex switch
+            {
+                0 => -20m, 1 => -16m, 2 => -14m, 3 => -12m, 4 => -9m,
+                _ => -14m
+            };
+            input.Value = v;
+        };
+
+        var ok = new Button { Text = "OK", DialogResult = DialogResult.OK, Location = new Point(184, 124), Width = 76 };
+        var cancel = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel, Location = new Point(266, 124), Width = 76 };
+        dlg.Controls.AddRange(new Control[] { info, preset, customLabel, input, ok, cancel });
+        dlg.AcceptButton = ok;
+        dlg.CancelButton = cancel;
+
+        if (dlg.ShowDialog(this) != DialogResult.OK) return;
+
+        var (s, en) = EffectRange();
+        _project.LoudnessNormalize(ActiveTrack, s, en, (float)input.Value);
+        _dirty = true;
+    }
+
     private void Amplify_Click(object? sender, EventArgs e)
     {
         if (_state != AppState.Idle || !ActiveHasAudio) return;

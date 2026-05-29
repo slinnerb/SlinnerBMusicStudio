@@ -17,6 +17,7 @@ partial class MainForm
     private ToolStripMenuItem miTrim;
     private ToolStripMenuItem miSilence;
     private ToolStripMenuItem miNormalize;
+    private ToolStripMenuItem miLoudness;
     private ToolStripMenuItem miAmplify;
     private ToolStripMenuItem miFadeIn;
     private ToolStripMenuItem miFadeOut;
@@ -137,13 +138,14 @@ partial class MainForm
         });
 
         var effectsMenu = new ToolStripMenuItem("E&ffects");
-        this.miNormalize = new ToolStripMenuItem("&Normalize", null, this.Normalize_Click);
+        this.miNormalize = new ToolStripMenuItem("&Normalize (peak)", null, this.Normalize_Click);
+        this.miLoudness = new ToolStripMenuItem("Make &Louder (loudness normalize)…", null, this.LoudnessNormalize_Click);
         this.miAmplify = new ToolStripMenuItem("&Amplify…", null, this.Amplify_Click);
         this.miFadeIn = new ToolStripMenuItem("Fade &In", null, this.FadeIn_Click);
         this.miFadeOut = new ToolStripMenuItem("Fade &Out", null, this.FadeOut_Click);
         effectsMenu.DropDownItems.AddRange(new ToolStripItem[]
         {
-            this.miNormalize, this.miAmplify, new ToolStripSeparator(),
+            this.miNormalize, this.miLoudness, this.miAmplify, new ToolStripSeparator(),
             this.miFadeIn, this.miFadeOut
         });
 

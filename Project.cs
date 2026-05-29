@@ -237,6 +237,30 @@ public class Project
         Amplify(track, start, end, 0.99f / peak);   // Amplify takes the undo snapshot
     }
 
+    // RMS-based loudness normalize. Boosts perceived loudness to hit a target
+    // RMS level in dBFS, then hard-limits at -0.1 dBFS to prevent clipping.
+    // Quiet recordings get much louder than peak Normalize would deliver.
+    public void LoudnessNormalize(int track, int start, int end, float targetRmsDb)
+    {
+        if (!Valid(track)) return;
+        (start, end) = ClampRange(track, start, end);
+        if (end <= start) return;
+        var samples = _tracks[track].Samples;
+
+        double sumSq = 0;
+        int count = end - start;
+        for (int i = start; i < end; i++)
+            sumSq += (double)samples[i] * samples[i];
+        double rms = Math.Sqrt(sumSq / count);
+        if (rms < 1e-6) return;
+
+        double currentDb = 20.0 * Math.Log10(rms);
+        double gainDb = targetRmsDb - currentDb;
+        float gain = (float)Math.Pow(10.0, gainDb / 20.0);
+
+        Amplify(track, start, end, gain);   // Amplify clamps to [-1,1] and takes the undo snapshot
+    }
+
     public void FadeIn(int track, int start, int end)
     {
         if (!Valid(track)) return;
