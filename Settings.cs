@@ -21,6 +21,11 @@ public class Settings
     public string? ServerUrl { get; set; }
     public string? PeerName { get; set; }
 
+    // GitHub auto-backup
+    public string? BackupRepo { get; set; }     // owner/name
+    public string? BackupToken { get; set; }    // PAT with "repo" scope
+    public bool AutoBackup { get; set; }
+
     private static string SettingsPath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
         "SlinnerBMusicStudio",

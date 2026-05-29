@@ -166,11 +166,12 @@ partial class MainForm
         var miSync = new ToolStripMenuItem("&Sync Now", null, this.SyncSession_Click) { ShortcutKeys = Keys.F5 };
         var miLeaveSession = new ToolStripMenuItem("&Leave Session", null, this.LeaveSession_Click);
         var miFriendsSettings = new ToolStripMenuItem("Session Se&ttings…", null, this.SessionSettings_Click);
+        var miBackupNow = new ToolStripMenuItem("&Backup to GitHub Now", null, this.BackupNow_Click);
         friendsMenu.DropDownItems.AddRange(new ToolStripItem[]
         {
             miCreateSession, miJoinSession, new ToolStripSeparator(),
             miSync, miLeaveSession, new ToolStripSeparator(),
-            miFriendsSettings
+            miBackupNow, miFriendsSettings
         });
 
         var helpMenu = new ToolStripMenuItem("&Help");

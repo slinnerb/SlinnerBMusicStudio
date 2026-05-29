@@ -180,6 +180,9 @@ public partial class MainForm
                 _dirty = false;
                 UpdateTitle();
             }
+
+            // Fire-and-forget auto-backup so a slow GitHub call doesn't block the user.
+            if (_settings.AutoBackup) _ = TryAutoBackupAsync(blob);
         }
         catch (Exception ex)
         {
@@ -222,25 +225,27 @@ public partial class MainForm
             Text = "Session Settings",
             FormBorderStyle = FormBorderStyle.FixedDialog,
             StartPosition = FormStartPosition.CenterParent,
-            ClientSize = new Size(420, 170),
+            ClientSize = new Size(460, 400),
             MaximizeBox = false,
             MinimizeBox = false,
             ShowInTaskbar = false
         };
-        var urlLabel = new Label { Text = "Server URL:", Location = new Point(16, 16), AutoSize = true };
+
+        var urlLabel = new Label { Text = "Relay server URL:", Location = new Point(16, 16), AutoSize = true };
         var urlBox = new TextBox
         {
             Location = new Point(16, 36),
-            Width = 388,
+            Width = 428,
             Text = _settings.ServerUrl ?? "http://"
         };
-        var hint = new Label
+        var urlHint = new Label
         {
             Text = "Example:  http://yourserver.example.com:8090",
-            Location = new Point(16, 64),
+            Location = new Point(16, 62),
             AutoSize = true,
             ForeColor = SystemColors.GrayText
         };
+
         var nameLabel = new Label { Text = "Display name (what friends see):", Location = new Point(16, 86), AutoSize = true };
         var nameBox = new TextBox
         {
@@ -248,11 +253,87 @@ public partial class MainForm
             Width = 240,
             Text = _settings.PeerName ?? Environment.UserName
         };
-        var ok = new Button { Text = "OK", DialogResult = DialogResult.OK, Location = new Point(248, 134), Width = 76 };
-        var cancel = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel, Location = new Point(328, 134), Width = 76 };
-        dlg.Controls.AddRange(new Control[] { urlLabel, urlBox, hint, nameLabel, nameBox, ok, cancel });
+
+        var backupHeader = new Label
+        {
+            Text = "GitHub auto-backup (optional)",
+            Location = new Point(16, 148),
+            AutoSize = true,
+            Font = new Font(this.Font, FontStyle.Bold)
+        };
+        var repoLabel = new Label { Text = "Backup repo (owner/name, private):", Location = new Point(16, 172), AutoSize = true };
+        var repoBox = new TextBox
+        {
+            Location = new Point(16, 192),
+            Width = 280,
+            Text = _settings.BackupRepo ?? ""
+        };
+        var tokenLabel = new Label { Text = "Personal Access Token (with \"repo\" scope):", Location = new Point(16, 220), AutoSize = true };
+        var tokenBox = new TextBox
+        {
+            Location = new Point(16, 240),
+            Width = 428,
+            UseSystemPasswordChar = true,
+            Text = _settings.BackupToken ?? ""
+        };
+        var tokenHint = new Label
+        {
+            Text = "Create one at  https://github.com/settings/tokens  ('repo' scope, classic token)",
+            Location = new Point(16, 266),
+            AutoSize = true,
+            ForeColor = SystemColors.GrayText
+        };
+        var autoBox = new CheckBox
+        {
+            Text = "Auto-backup every successful Sync",
+            Location = new Point(16, 290),
+            AutoSize = true,
+            Checked = _settings.AutoBackup
+        };
+        var testBtn = new Button
+        {
+            Text = "Test Connection",
+            Location = new Point(16, 318),
+            Width = 140
+        };
+
+        var ok = new Button { Text = "OK", DialogResult = DialogResult.OK, Location = new Point(288, 360), Width = 76 };
+        var cancel = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel, Location = new Point(368, 360), Width = 76 };
+        dlg.Controls.AddRange(new Control[]
+        {
+            urlLabel, urlBox, urlHint,
+            nameLabel, nameBox,
+            backupHeader, repoLabel, repoBox, tokenLabel, tokenBox, tokenHint, autoBox, testBtn,
+            ok, cancel
+        });
         dlg.AcceptButton = ok;
         dlg.CancelButton = cancel;
+
+        testBtn.Click += async (_, _) =>
+        {
+            var repo = repoBox.Text.Trim();
+            var token = tokenBox.Text.Trim();
+            if (string.IsNullOrEmpty(repo) || string.IsNullOrEmpty(token))
+            {
+                MessageBox.Show(dlg, "Fill in the repo and token first.", "Test Connection",
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+            try
+            {
+                testBtn.Enabled = false;
+                await new GitHubBackup(repo, token).EnsureReachableAsync();
+                MessageBox.Show(dlg, $"OK — '{repo}' is reachable and the token works.",
+                    "Test Connection", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(dlg, ex.Message, "Test Connection",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+            finally { testBtn.Enabled = true; }
+        };
+
         if (dlg.ShowDialog(this) != DialogResult.OK) return;
 
         var url = urlBox.Text.Trim();
@@ -260,7 +341,71 @@ public partial class MainForm
             url = "http://" + url;
         _settings.ServerUrl = string.IsNullOrEmpty(url) ? null : url;
         _settings.PeerName = string.IsNullOrWhiteSpace(nameBox.Text) ? null : nameBox.Text.Trim();
+        _settings.BackupRepo = string.IsNullOrWhiteSpace(repoBox.Text) ? null : repoBox.Text.Trim();
+        _settings.BackupToken = string.IsNullOrWhiteSpace(tokenBox.Text) ? null : tokenBox.Text.Trim();
+        _settings.AutoBackup = autoBox.Checked;
         _settings.Save();
+    }
+
+    private async void BackupNow_Click(object? sender, EventArgs e)
+    {
+        if (_project.IsEmpty)
+        {
+            MessageBox.Show(this, "Nothing to back up — the project is empty.",
+                "Backup", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(_settings.BackupRepo) || string.IsNullOrWhiteSpace(_settings.BackupToken))
+        {
+            MessageBox.Show(this,
+                "GitHub backup isn't configured. Open Work with Friends → Session Settings and fill in the backup repo + token.",
+                "Backup", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        try
+        {
+            Cursor = Cursors.WaitCursor;
+            var commitUrl = await UploadBackupAsync(_project.ToBytes());
+            statusLabel.Text = "Backed up to GitHub.";
+            MessageBox.Show(this,
+                "Backup uploaded." + (string.IsNullOrEmpty(commitUrl) ? "" : Environment.NewLine + Environment.NewLine + commitUrl),
+                "Backup", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, "Backup failed.\n\n" + ex.Message,
+                "Backup", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+        finally { Cursor = Cursors.Default; }
+    }
+
+    private async Task TryAutoBackupAsync(byte[] blob)
+    {
+        if (string.IsNullOrWhiteSpace(_settings.BackupRepo) || string.IsNullOrWhiteSpace(_settings.BackupToken))
+            return;
+        try
+        {
+            await UploadBackupAsync(blob);
+            BeginInvoke(new Action(() => statusLabel.Text = statusLabel.Text + "  (backup ok)"));
+        }
+        catch (Exception ex)
+        {
+            BeginInvoke(new Action(() => statusLabel.Text = "Backup failed: " + ex.Message));
+        }
+    }
+
+    private async Task<string> UploadBackupAsync(byte[] blob)
+    {
+        var backup = new GitHubBackup(_settings.BackupRepo!, _settings.BackupToken!);
+        var sessionFolder = string.IsNullOrEmpty(_sessionCode) ? "solo" : _sessionCode!;
+        var timestamp = DateTime.UtcNow.ToString("yyyyMMdd-HHmmss");
+        var path = $"sessions/{sessionFolder}/{timestamp}.smsproj";
+        var peer = string.IsNullOrWhiteSpace(_settings.PeerName) ? Environment.UserName : _settings.PeerName!;
+        var msg = string.IsNullOrEmpty(_sessionCode)
+            ? $"Snapshot from {peer} ({timestamp} UTC)"
+            : $"Snapshot of session {_sessionCode} from {peer} ({timestamp} UTC)";
+        return await backup.UploadAsync(path, blob, msg);
     }
 
     private string? PromptForCode()
