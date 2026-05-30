@@ -291,6 +291,7 @@ public partial class MainForm
             _sessionCode = code;
             _sessionVersion = result.Version;
             _currentPath = null;
+            _projectPath = null;
             _dirty = false;
             waveform.ActiveTrack = 0;
             waveform.SetCursor(0);

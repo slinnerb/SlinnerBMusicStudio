@@ -28,7 +28,8 @@ public partial class MainForm : Form
     private int _recordTrack;
 
     private float[] _clipboard = Array.Empty<float>();
-    private string? _currentPath;
+    private string? _currentPath;     // last imported audio file (for export name hints)
+    private string? _projectPath;     // current .smsproj path (File ▸ Save/Open Project)
     private bool _dirty;
     private bool _mfReady;
     private bool _populating;
@@ -725,10 +726,94 @@ public partial class MainForm : Form
         if (_state != AppState.Idle || !ConfirmDiscard()) return;
         _project.Clear();
         _currentPath = null;
+        _projectPath = null;
         _dirty = false;
         waveform.SetCursor(0);
         waveform.ZoomToFit();
         UpdateTitle();
+    }
+
+    // --- project files (.smsproj) -----------------------------------------
+
+    private const string ProjectFilter = "SlinnerB Music Studio project (*.smsproj)|*.smsproj|All files (*.*)|*.*";
+
+    private void OpenProject_Click(object? sender, EventArgs e)
+    {
+        if (_state != AppState.Idle || !ConfirmDiscard()) return;
+
+        using var ofd = new OpenFileDialog
+        {
+            Title = "Open project",
+            Filter = ProjectFilter
+        };
+        if (_settings.LastFolder != null && Directory.Exists(_settings.LastFolder))
+            ofd.InitialDirectory = _settings.LastFolder;
+        if (ofd.ShowDialog(this) != DialogResult.OK) return;
+
+        try
+        {
+            Cursor = Cursors.WaitCursor;
+            var bytes = File.ReadAllBytes(ofd.FileName);
+            _project.LoadFromBytes(bytes);
+            _projectPath = ofd.FileName;
+            _currentPath = null;
+            _settings.LastFolder = Path.GetDirectoryName(ofd.FileName);
+            _dirty = false;
+            waveform.ActiveTrack = 0;
+            waveform.SetCursor(0);
+            waveform.ZoomToFit();
+            UpdateTitle();
+            statusLabel.Text = $"Opened {Path.GetFileName(ofd.FileName)}.";
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, "Could not open the project.\n\n" + ex.Message,
+                "Open Project", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+        finally { Cursor = Cursors.Default; }
+    }
+
+    private void SaveProject_Click(object? sender, EventArgs e)
+    {
+        if (string.IsNullOrEmpty(_projectPath)) { SaveProjectAs_Click(sender, e); return; }
+        SaveProjectTo(_projectPath);
+    }
+
+    private void SaveProjectAs_Click(object? sender, EventArgs e)
+    {
+        using var sfd = new SaveFileDialog
+        {
+            Title = "Save project",
+            Filter = "SlinnerB Music Studio project (*.smsproj)|*.smsproj",
+            FileName = string.IsNullOrEmpty(_projectPath) ? "My Song.smsproj" : Path.GetFileName(_projectPath)
+        };
+        if (_settings.LastFolder != null && Directory.Exists(_settings.LastFolder))
+            sfd.InitialDirectory = _settings.LastFolder;
+        if (sfd.ShowDialog(this) != DialogResult.OK) return;
+        SaveProjectTo(sfd.FileName);
+    }
+
+    private bool SaveProjectTo(string path)
+    {
+        try
+        {
+            Cursor = Cursors.WaitCursor;
+            File.WriteAllBytes(path, _project.ToBytes());
+            _projectPath = path;
+            _currentPath = null;
+            _settings.LastFolder = Path.GetDirectoryName(path);
+            _dirty = false;
+            UpdateTitle();
+            statusLabel.Text = $"Saved {Path.GetFileName(path)}.";
+            return true;
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, "Could not save the project.\n\n" + ex.Message,
+                "Save Project", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return false;
+        }
+        finally { Cursor = Cursors.Default; }
     }
 
     private void Open_Click(object? sender, EventArgs e)
@@ -751,6 +836,7 @@ public partial class MainForm : Form
             float[] samples = LoadAudioFile(ofd.FileName);
             _project.LoadSingle(samples, Path.GetFileNameWithoutExtension(ofd.FileName));
             _currentPath = ofd.FileName;
+            _projectPath = null;
             _settings.LastFolder = Path.GetDirectoryName(ofd.FileName);
             _dirty = false;
             waveform.ActiveTrack = 0;
@@ -1106,7 +1192,9 @@ public partial class MainForm : Form
 
     private void UpdateTitle()
     {
-        string name = _currentPath != null ? Path.GetFileName(_currentPath) : "Untitled";
+        string name = _projectPath != null ? Path.GetFileName(_projectPath)
+                    : _currentPath != null ? Path.GetFileName(_currentPath)
+                    : "Untitled";
         string mark = _dirty ? "*" : "";
         string suffix = _state switch
         {

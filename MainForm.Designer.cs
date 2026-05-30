@@ -5,6 +5,7 @@ partial class MainForm
     private System.ComponentModel.IContainer components = null!;
 
     private MenuStrip menuStrip;
+    private ToolStripMenuItem miSaveProject;
     private ToolStripMenuItem miSave;
     private ToolStripMenuItem miExport;
     private ToolStripMenuItem miUndo;
@@ -111,14 +112,18 @@ partial class MainForm
 
         // --- menu -----------------------------------------------------------
         var fileMenu = new ToolStripMenuItem("&File");
-        var miNew = new ToolStripMenuItem("&New", null, this.New_Click) { ShortcutKeys = Keys.Control | Keys.N };
-        var miOpen = new ToolStripMenuItem("&Open…", null, this.Open_Click) { ShortcutKeys = Keys.Control | Keys.O };
-        this.miSave = new ToolStripMenuItem("&Save Mix as WAV…", null, this.SaveWav_Click) { ShortcutKeys = Keys.Control | Keys.S };
+        var miNew = new ToolStripMenuItem("&New Project", null, this.New_Click) { ShortcutKeys = Keys.Control | Keys.N };
+        var miOpenProject = new ToolStripMenuItem("&Open Project…", null, this.OpenProject_Click) { ShortcutKeys = Keys.Control | Keys.O };
+        this.miSaveProject = new ToolStripMenuItem("&Save Project", null, this.SaveProject_Click) { ShortcutKeys = Keys.Control | Keys.S };
+        var miSaveProjectAs = new ToolStripMenuItem("Save Project &As…", null, this.SaveProjectAs_Click) { ShortcutKeys = Keys.Control | Keys.Shift | Keys.S };
+        var miImportAudio = new ToolStripMenuItem("&Import Audio File…", null, this.Open_Click);
+        this.miSave = new ToolStripMenuItem("Save Mix as &WAV…", null, this.SaveWav_Click);
         this.miExport = new ToolStripMenuItem("&Export Mix as MP3…", null, this.ExportMp3_Click);
         var miExit = new ToolStripMenuItem("E&xit", null, this.Exit_Click);
         fileMenu.DropDownItems.AddRange(new ToolStripItem[]
         {
-            miNew, miOpen, new ToolStripSeparator(),
+            miNew, miOpenProject, this.miSaveProject, miSaveProjectAs, new ToolStripSeparator(),
+            miImportAudio, new ToolStripSeparator(),
             this.miSave, this.miExport, new ToolStripSeparator(), miExit
         });
 
