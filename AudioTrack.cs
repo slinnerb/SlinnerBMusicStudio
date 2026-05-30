@@ -10,5 +10,11 @@ public class AudioTrack
     public string Name = "Track";
     public bool Muted;
 
+    /// <summary>Where this track's audio starts on the timeline, in samples (>= 0).</summary>
+    public int Offset;
+
     public int Length => Samples.Length;
+
+    /// <summary>One past the last sample on the timeline (offset + length).</summary>
+    public int End => Offset + Samples.Length;
 }

@@ -16,8 +16,8 @@ public class Project
     public IReadOnlyList<AudioTrack> Tracks => _tracks;
     public int TrackCount => _tracks.Count;
 
-    private readonly List<(int track, float[] samples)> _undo = new();
-    private readonly List<(int track, float[] samples)> _redo = new();
+    private readonly List<(int track, float[] samples, int offset)> _undo = new();
+    private readonly List<(int track, float[] samples, int offset)> _redo = new();
     private const int MaxUndo = 30;
 
     /// <summary>Raised after any change to track content, structure, or mute state.</summary>
@@ -29,14 +29,14 @@ public class Project
     public bool CanRedo => _redo.Count > 0;
     public bool IsEmpty => _tracks.Count == 0 || _tracks.All(t => t.Length == 0);
 
-    /// <summary>Length of the longest track, in samples.</summary>
+    /// <summary>End of the latest-finishing track on the timeline, in samples.</summary>
     public int Length
     {
         get
         {
             int max = 0;
             foreach (var t in _tracks)
-                if (t.Length > max) max = t.Length;
+                if (t.End > max) max = t.End;
             return max;
         }
     }
@@ -101,19 +101,43 @@ public class Project
         Raise();
     }
 
+    // --- timeline position (move a track left/right) -----------------------
+
+    public int GetOffset(int track) => Valid(track) ? _tracks[track].Offset : 0;
+
+    /// <summary>Live move during a drag — no undo snapshot (call CommitMove on release).</summary>
+    public void SetOffset(int track, int offset)
+    {
+        if (!Valid(track)) return;
+        offset = Math.Max(0, offset);
+        if (_tracks[track].Offset == offset) return;
+        _tracks[track].Offset = offset;
+        Raise();
+    }
+
+    /// <summary>Records one undo step for a finished move (restores the pre-drag offset).</summary>
+    public void CommitMove(int track, int oldOffset)
+    {
+        if (!Valid(track) || _tracks[track].Offset == oldOffset) return;
+        _undo.Add((track, _tracks[track].Samples, oldOffset));
+        if (_undo.Count > MaxUndo) _undo.RemoveAt(0);
+        _redo.Clear();
+    }
+
     // --- project file format ----------------------------------------------
     // Binary .smsproj layout:
     //   4 bytes "SBMS"
-    //   int32 format version (currently 1)
+    //   int32 format version (1 or 2)
     //   int32 sample rate
     //   int32 track count
     //   per track:
     //     int16 name byte length, name bytes (UTF-8)
     //     byte  muted (0/1)
+    //     int32 timeline offset in samples         <-- v2 only
     //     int32 sample count, sample count * float32 samples
 
     private const uint Magic = 0x534D4253; // "SBMS"
-    private const int CurrentFormat = 1;
+    private const int CurrentFormat = 2;
 
     public byte[] ToBytes()
     {
@@ -132,6 +156,7 @@ public class Project
                 w.Write((short)nameBytes.Length);
                 w.Write(nameBytes);
                 w.Write((byte)(t.Muted ? 1 : 0));
+                w.Write(t.Offset);
                 w.Write(t.Samples.Length);
                 var bytes = MemoryMarshal.AsBytes(t.Samples.AsSpan());
                 w.Write(bytes);
@@ -147,7 +172,7 @@ public class Project
         if (r.ReadUInt32() != Magic)
             throw new InvalidDataException("Not a SlinnerB's Music Studio project file.");
         int format = r.ReadInt32();
-        if (format != CurrentFormat)
+        if (format != 1 && format != 2)
             throw new InvalidDataException($"Unsupported project format version {format}.");
         int rate = r.ReadInt32();
         if (rate != Rate)
@@ -160,13 +185,14 @@ public class Project
             int nameLen = r.ReadInt16();
             string name = System.Text.Encoding.UTF8.GetString(r.ReadBytes(nameLen));
             bool muted = r.ReadByte() != 0;
+            int offset = format >= 2 ? r.ReadInt32() : 0;
             int sampleCount = r.ReadInt32();
             var samples = new float[sampleCount];
             var bytes = MemoryMarshal.AsBytes(samples.AsSpan());
             int read = r.Read(bytes);
             if (read != bytes.Length)
                 throw new InvalidDataException("Project file is truncated.");
-            fresh.Add(new AudioTrack { Name = name, Muted = muted, Samples = samples });
+            fresh.Add(new AudioTrack { Name = name, Muted = muted, Offset = Math.Max(0, offset), Samples = samples });
         }
 
         _tracks.Clear();
@@ -180,7 +206,7 @@ public class Project
 
     private void Snapshot(int track)
     {
-        _undo.Add((track, _tracks[track].Samples));
+        _undo.Add((track, _tracks[track].Samples, _tracks[track].Offset));
         if (_undo.Count > MaxUndo) _undo.RemoveAt(0);
         _redo.Clear();
     }
@@ -188,12 +214,13 @@ public class Project
     public void Undo()
     {
         if (_undo.Count == 0) return;
-        var (track, samples) = _undo[^1];
+        var (track, samples, offset) = _undo[^1];
         _undo.RemoveAt(_undo.Count - 1);
         if (Valid(track))
         {
-            _redo.Add((track, _tracks[track].Samples));
+            _redo.Add((track, _tracks[track].Samples, _tracks[track].Offset));
             _tracks[track].Samples = samples;
+            _tracks[track].Offset = offset;
         }
         Raise();
     }
@@ -201,12 +228,13 @@ public class Project
     public void Redo()
     {
         if (_redo.Count == 0) return;
-        var (track, samples) = _redo[^1];
+        var (track, samples, offset) = _redo[^1];
         _redo.RemoveAt(_redo.Count - 1);
         if (Valid(track))
         {
-            _undo.Add((track, _tracks[track].Samples));
+            _undo.Add((track, _tracks[track].Samples, _tracks[track].Offset));
             _tracks[track].Samples = samples;
+            _tracks[track].Offset = offset;
         }
         Raise();
     }
@@ -270,6 +298,7 @@ public class Project
         var result = new float[end - start];
         Array.Copy(src, start, result, 0, end - start);
         _tracks[track].Samples = result;
+        _tracks[track].Offset += start;   // keep the kept region where it sits on the timeline
         Raise();
     }
 
@@ -368,7 +397,7 @@ public class Project
 
     // --- mixdown -----------------------------------------------------------
 
-    /// <summary>Sums every non-muted track into one buffer, clipped to [-1, 1].</summary>
+    /// <summary>Sums every non-muted track into one buffer at its timeline offset, clipped to [-1, 1].</summary>
     public float[] Mixdown()
     {
         int len = Length;
@@ -377,9 +406,12 @@ public class Project
         {
             if (track.Muted) continue;
             var s = track.Samples;
-            int n = Math.Min(s.Length, len);
-            for (int i = 0; i < n; i++)
-                mix[i] += s[i];
+            int off = track.Offset;
+            for (int i = 0; i < s.Length; i++)
+            {
+                int j = off + i;
+                if (j >= 0 && j < len) mix[j] += s[i];
+            }
         }
         for (int i = 0; i < len; i++)
             mix[i] = Math.Clamp(mix[i], -1f, 1f);

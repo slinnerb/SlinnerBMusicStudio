@@ -54,6 +54,7 @@ partial class MainForm
     private Button deleteButton;
     private Button trimButton;
     private Button silenceButton;
+    private CheckBox moveModeButton;
     private Label timeLabel;
 
     private WaveformView waveform;
@@ -102,6 +103,7 @@ partial class MainForm
         this.deleteButton = new Button();
         this.trimButton = new Button();
         this.silenceButton = new Button();
+        this.moveModeButton = new CheckBox();
         this.timeLabel = new Label();
         this.waveform = new WaveformView();
         this.statusStrip = new StatusStrip();
@@ -381,6 +383,14 @@ partial class MainForm
         this.silenceButton.UseVisualStyleBackColor = true;
         this.silenceButton.Click += this.Silence_Click;
 
+        this.moveModeButton.Appearance = Appearance.Button;
+        this.moveModeButton.Location = new Point(576, 7);
+        this.moveModeButton.Size = new Size(112, 30);
+        this.moveModeButton.Text = "↔ Move Track";
+        this.moveModeButton.TextAlign = ContentAlignment.MiddleCenter;
+        this.moveModeButton.UseVisualStyleBackColor = true;
+        this.moveModeButton.CheckedChanged += this.moveModeButton_CheckedChanged;
+
         this.timeLabel.Anchor = AnchorStyles.Top | AnchorStyles.Right;
         this.timeLabel.Location = new Point(880, 4);
         this.timeLabel.Size = new Size(200, 34);
@@ -396,6 +406,7 @@ partial class MainForm
         this.editPanel.Controls.Add(this.deleteButton);
         this.editPanel.Controls.Add(this.trimButton);
         this.editPanel.Controls.Add(this.silenceButton);
+        this.editPanel.Controls.Add(this.moveModeButton);
         this.editPanel.Controls.Add(this.timeLabel);
 
         // --- waveform / status ----------------------------------------------

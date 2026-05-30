@@ -42,6 +42,7 @@ public partial class MainForm : Form
 
         waveform.Project = _project;
         waveform.SelectionChanged += (_, _) => { UpdateUiState(); UpdateStatus(); };
+        waveform.TrackMoved += (_, _) => { _dirty = true; UpdateTitle(); UpdateStatus(); };
         _project.Changed += (_, _) => { UpdateUiState(); UpdateStatus(); };
 
         waveform.AllowDrop = true;
@@ -502,11 +503,22 @@ public partial class MainForm : Form
 
     private bool ActiveHasAudio => ActiveValid && _project.Tracks[ActiveTrack].Length > 0;
 
-    private (int start, int end) Selection() => (waveform.SelectionStart, waveform.SelectionEnd);
+    private int ActiveOffset => ActiveValid ? _project.Tracks[ActiveTrack].Offset : 0;
+
+    // The timeline selection is in absolute samples; edits operate on the active
+    // track's own buffer, so convert by subtracting that track's offset. Project
+    // clamps the result to the track, so a selection partly/entirely off the clip
+    // just trims to the overlapping part.
+    private (int start, int end) Selection()
+    {
+        int off = ActiveOffset;
+        return (waveform.SelectionStart - off, waveform.SelectionEnd - off);
+    }
 
     private (int start, int end) EffectRange()
     {
-        if (waveform.HasSelection) return (waveform.SelectionStart, waveform.SelectionEnd);
+        int off = ActiveOffset;
+        if (waveform.HasSelection) return (waveform.SelectionStart - off, waveform.SelectionEnd - off);
         return (0, ActiveValid ? _project.Tracks[ActiveTrack].Length : 0);
     }
 
@@ -523,10 +535,11 @@ public partial class MainForm : Form
     private void Cut_Click(object? sender, EventArgs e)
     {
         if (_state != AppState.Idle || !waveform.HasSelection || !ActiveValid) return;
+        int off = ActiveOffset;
         var (s, en) = Selection();
         _clipboard = _project.Extract(ActiveTrack, s, en);
         _project.Delete(ActiveTrack, s, en);
-        waveform.SetCursor(s);
+        waveform.SetCursor(off + Math.Max(0, s));
         _dirty = true;
     }
 
@@ -541,18 +554,21 @@ public partial class MainForm : Form
     private void Paste_Click(object? sender, EventArgs e)
     {
         if (_state != AppState.Idle || _clipboard.Length == 0 || !ActiveValid) return;
-        int at = waveform.CursorSample;
-        _project.Insert(ActiveTrack, at, _clipboard);
-        waveform.SetSelection(at, at + _clipboard.Length);
+        int off = ActiveOffset;
+        int atLocal = Math.Clamp(waveform.CursorSample - off, 0, _project.Tracks[ActiveTrack].Length);
+        _project.Insert(ActiveTrack, atLocal, _clipboard);
+        int absStart = off + atLocal;
+        waveform.SetSelection(absStart, absStart + _clipboard.Length);
         _dirty = true;
     }
 
     private void Delete_Click(object? sender, EventArgs e)
     {
         if (_state != AppState.Idle || !waveform.HasSelection || !ActiveValid) return;
+        int off = ActiveOffset;
         var (s, en) = Selection();
         _project.Delete(ActiveTrack, s, en);
-        waveform.SetCursor(s);
+        waveform.SetCursor(off + Math.Max(0, s));
         _dirty = true;
     }
 
@@ -566,7 +582,9 @@ public partial class MainForm : Form
         if (_state != AppState.Idle || !waveform.HasSelection || !ActiveValid) return;
         var (s, en) = Selection();
         _project.Trim(ActiveTrack, s, en);
-        waveform.SetSelection(0, en - s);
+        int newOff = _project.Tracks[ActiveTrack].Offset;
+        int newLen = _project.Tracks[ActiveTrack].Length;
+        waveform.SetSelection(newOff, newOff + newLen);
         waveform.ZoomToFit();
         _dirty = true;
     }
@@ -577,6 +595,14 @@ public partial class MainForm : Form
         var (s, en) = Selection();
         _project.Silence(ActiveTrack, s, en);
         _dirty = true;
+    }
+
+    private void moveModeButton_CheckedChanged(object? sender, EventArgs e)
+    {
+        waveform.MoveMode = moveModeButton.Checked;
+        statusLabel.Text = moveModeButton.Checked
+            ? "Move mode ON — drag a track left/right to slide it along the timeline. Click the button again to turn off."
+            : "Move mode off.";
     }
 
     // --- effects -----------------------------------------------------------
@@ -1150,6 +1176,8 @@ public partial class MainForm : Form
         deleteButton.Enabled = miDelete.Enabled = idle && sel && activeAudio;
         trimButton.Enabled = miTrim.Enabled = idle && sel && activeAudio;
         silenceButton.Enabled = miSilence.Enabled = idle && sel && activeAudio;
+        moveModeButton.Enabled = idle && anyTracks;
+        if (!moveModeButton.Enabled && moveModeButton.Checked) moveModeButton.Checked = false;
 
         miSelectAll.Enabled = idle && has;
         miSave.Enabled = idle && has;

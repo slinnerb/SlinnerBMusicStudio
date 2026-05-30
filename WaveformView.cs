@@ -32,6 +32,12 @@ public class WaveformView : Control
     private int _dragAnchor;
     private int _playHead = -1;
 
+    // Move mode: drag a lane to slide its clip along the timeline.
+    private bool _movingClip;
+    private int _moveTrack;
+    private int _moveAnchorSample;
+    private int _moveOrigOffset;
+
     // Per-track peak caches (rebuilt only when a track's buffer reference changes).
     private readonly List<float[]> _peakMin = new();
     private readonly List<float[]> _peakMax = new();
@@ -45,6 +51,10 @@ public class WaveformView : Control
     private float _liveCurMin = 1f, _liveCurMax = -1f;
 
     public event EventHandler? SelectionChanged;
+    public event EventHandler? TrackMoved;
+
+    /// <summary>When true, dragging a lane slides its clip instead of selecting a time range.</summary>
+    public bool MoveMode { get; set; }
 
     public WaveformView()
     {
@@ -376,6 +386,14 @@ public class WaveformView : Control
             if (MuteBoxRect(LaneTop(lane)).Contains(e.X, e.Y) && _liveTrack < 0)
                 _project.SetMuted(lane, !_project.Tracks[lane].Muted);
         }
+        else if (_liveTrack < 0 && MoveMode)
+        {
+            _movingClip = true;
+            _moveTrack = lane;
+            _moveAnchorSample = XToSample(e.X);
+            _moveOrigOffset = _project.Tracks[lane].Offset;
+            Cursor = Cursors.SizeWE;
+        }
         else if (_liveTrack < 0)
         {
             _dragging = true;
@@ -390,6 +408,19 @@ public class WaveformView : Control
     protected override void OnMouseMove(MouseEventArgs e)
     {
         base.OnMouseMove(e);
+
+        if (_movingClip && _project != null)
+        {
+            int delta = XToSample(e.X) - _moveAnchorSample;
+            int newOff = Math.Max(0, _moveOrigOffset + delta);
+            int snap = (int)(_samplesPerPixel * 5);     // snap to the start when close
+            if (newOff < snap) newOff = 0;
+            _project.SetOffset(_moveTrack, newOff);
+            UpdateScrollBars();
+            Invalidate();
+            return;
+        }
+
         if (!_dragging) return;
         int s = ClampSample(XToSample(e.X));
         _selStart = Math.Min(_dragAnchor, s);
@@ -401,6 +432,19 @@ public class WaveformView : Control
     protected override void OnMouseUp(MouseEventArgs e)
     {
         base.OnMouseUp(e);
+
+        if (_movingClip)
+        {
+            _movingClip = false;
+            Cursor = Cursors.Default;
+            if (_project != null && _project.Tracks[_moveTrack].Offset != _moveOrigOffset)
+            {
+                _project.CommitMove(_moveTrack, _moveOrigOffset);
+                TrackMoved?.Invoke(this, EventArgs.Empty);
+            }
+            return;
+        }
+
         if (!_dragging) return;
         _dragging = false;
         SelectionChanged?.Invoke(this, EventArgs.Empty);
@@ -486,7 +530,11 @@ public class WaveformView : Control
         using (var nameBrush = new SolidBrush(Color.FromArgb(220, 222, 230)))
             g.DrawString(track.Name, _nameFont, nameBrush, 14, ty + 10);
         using (var subBrush = new SolidBrush(Color.FromArgb(150, 154, 166)))
-            g.DrawString(FormatTime(track.Length / (double)Rate), _smallFont, subBrush, 14, ty + 32);
+        {
+            string sub = FormatTime(track.Length / (double)Rate);
+            if (track.Offset > 0) sub += "  @ " + FormatTime(track.Offset / (double)Rate);
+            g.DrawString(sub, _smallFont, subBrush, 14, ty + 32);
+        }
 
         var mute = MuteBoxRect(ty);
         if (track.Muted)
@@ -510,6 +558,16 @@ public class WaveformView : Control
         using (var waveBg = new SolidBrush(Color.FromArgb(32, 34, 42)))
             g.FillRectangle(waveBg, wx, ty, ww, TrackHeight);
 
+        // Shade the span the clip actually occupies, so a moved clip is obvious.
+        if (i != _liveTrack && track.Samples.Length > 0)
+        {
+            double cx0 = Math.Max(HeaderWidth, SampleToX(track.Offset));
+            double cx1 = Math.Min(ContentRight, SampleToX(track.Offset + track.Samples.Length));
+            if (cx1 > cx0)
+                using (var clipBg = new SolidBrush(Color.FromArgb(42, 46, 60)))
+                    g.FillRectangle(clipBg, (float)cx0, ty, (float)(cx1 - cx0), TrackHeight);
+        }
+
         int midY = ty + TrackHeight / 2;
         using (var midPen = new Pen(Color.FromArgb(58, 62, 74)))
             g.DrawLine(midPen, wx, midY, ContentRight, midY);
@@ -526,17 +584,19 @@ public class WaveformView : Control
 
     private void DrawWaveLane(Graphics g, int i, int midY, int half)
     {
-        var samples = _project!.Tracks[i].Samples;
-        int len = samples.Length;
+        var track = _project!.Tracks[i];
+        int len = track.Samples.Length;
         if (len == 0) return;
+        int off = track.Offset;
         using var pen = new Pen(Color.FromArgb(120, 200, 255));
         for (int x = HeaderWidth; x < ContentRight; x++)
         {
-            int s0 = XToSample(x);
-            if (s0 >= len) break;
-            if (s0 < 0) s0 = 0;
-            int s1 = XToSample(x + 1);
+            int s0 = XToSample(x) - off;          // track-local sample under this column
+            int s1 = XToSample(x + 1) - off;
             if (s1 <= s0) s1 = s0 + 1;
+            if (s0 >= len) break;                  // past the end of the clip
+            if (s1 <= 0) continue;                 // before the start of the clip
+            if (s0 < 0) s0 = 0;
             if (s1 > len) s1 = len;
 
             ColumnPeak(i, s0, s1, out float mn, out float mx);
