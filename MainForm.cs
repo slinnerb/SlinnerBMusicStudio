@@ -1158,6 +1158,7 @@ public partial class MainForm : Form
         CleanupMonitorOut();
         CleanupPlayback();
         StopMonitor();
+        StopHostIfRunning();
         _state = AppState.Idle;
         if (_mfReady)
             try { MediaFoundationApi.Shutdown(); } catch { }
