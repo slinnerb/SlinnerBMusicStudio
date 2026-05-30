@@ -185,6 +185,17 @@ partial class MainForm
             fileMenu, editMenu, effectsMenu, trackMenu, friendsMenu, helpMenu
         });
 
+        // Version, pinned to the top-right corner of the menu bar.
+        var asmVer = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
+        var versionLabel = new ToolStripLabel(
+            asmVer != null ? $"v{asmVer.Major}.{asmVer.Minor}.{asmVer.Build}" : "")
+        {
+            Alignment = ToolStripItemAlignment.Right,
+            ForeColor = Color.Gray,
+            Margin = new Padding(0, 0, 10, 0)
+        };
+        this.menuStrip.Items.Add(versionLabel);
+
         // --- transport panel ------------------------------------------------
         this.transportPanel.Dock = DockStyle.Top;
         this.transportPanel.Height = 56;

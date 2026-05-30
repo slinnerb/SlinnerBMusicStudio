@@ -197,17 +197,24 @@ internal static class Updater
         var scriptPath = Path.Combine(Path.GetTempPath(), "SlinnerB-update.bat");
         var log = Path.Combine(temp, "update.log");
 
+        // Notes on robustness:
+        //  - ping is used for the short waits instead of `timeout`, which errors
+        //    out ("input redirection is not supported") when there is no console.
+        //  - we cd into the install folder before `start` so the relaunch path is
+        //    unambiguous, and launch cmd with a real (hidden) console so `start`
+        //    actually spawns the app.
         var script =
 $@"@echo off
 :waitloop
 tasklist /FI ""PID eq {pid}"" | find ""{pid}"" >nul
 if %errorlevel%==0 (
-  timeout /t 1 /nobreak >nul
+  ping -n 2 127.0.0.1 >nul
   goto waitloop
 )
-timeout /t 1 /nobreak >nul
+ping -n 2 127.0.0.1 >nul
 robocopy ""{staging}"" ""{installDir}"" /E /IS /IT /R:3 /W:1 /LOG:""{log}"" >nul
-start """" ""{Path.Combine(installDir, exeName)}""
+cd /d ""{installDir}""
+start """" ""{exeName}""
 rmdir /S /Q ""{temp}""
 del ""%~f0""
 ";
@@ -218,8 +225,7 @@ del ""%~f0""
             FileName = "cmd.exe",
             Arguments = $"/c \"{scriptPath}\"",
             WindowStyle = ProcessWindowStyle.Hidden,
-            CreateNoWindow = true,
-            UseShellExecute = false
+            UseShellExecute = true   // gives cmd a real (hidden) console so `start` works
         });
 
         Environment.Exit(0);
